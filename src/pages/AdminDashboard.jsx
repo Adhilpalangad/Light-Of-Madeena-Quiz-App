@@ -240,40 +240,46 @@ export default function AdminDashboard() {
 
             <div className="relative z-10 max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 mb-6">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex items-center mb-4 lg:mb-0">
-                            <div className="w-12 h-12 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full flex items-center justify-center mr-4">
-                                <div className="w-6 h-6 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full"></div>
-                            </div>
-                            <div>
-                                <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
-                                    Meeelad Admin Dashboard
-                                </h1>
-                                <p className="text-emerald-600 font-medium">Manage program submissions</p>
+                <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-4 sm:p-6 mb-6">
+                    <div className="flex flex-col space-y-4">
+                        {/* Header Section */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center mb-4 sm:mb-0">
+                                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full flex items-center justify-center mr-3 sm:mr-4">
+                                    <div className="w-5 h-5 sm:w-6 sm:h-6 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full"></div>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
+                                        Meeelad Admin Dashboard
+                                    </h1>
+                                    <p className="text-sm sm:text-base text-emerald-600 font-medium">Manage program submissions</p>
+                                </div>
                             </div>
                         </div>
-                        <div className="mt-6">
+
+                        {/* Buttons Section */}
+                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                             <button
                                 onClick={() => setShowModal(true)}
-                                className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
+                                className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm sm:text-base rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 order-1"
                             >
                                 Add Question
                             </button>
-                        </div>
-                        <button
-                            onClick={handleLogout}
-                            className="px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-medium rounded-xl transition-all duration-300 transform hover:-translate-y-1"
-                        >
-                            Logout
-                        </button>
-                        <button
-                            onClick={() => generateLeaderboard()}
-                            className="px-6 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-xl hover:from-yellow-600 hover:to-amber-600 transition-all duration-300 mr-4"
-                        >
-                            Show Leaderboard
-                        </button>
 
+                            <button
+                                onClick={() => generateLeaderboard()}
+                                className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-sm sm:text-base rounded-xl hover:from-yellow-600 hover:to-amber-600 transition-all duration-300 order-2"
+                            >
+                                Show Leaderboard
+                            </button>
+
+                            <button
+                                onClick={handleLogout}
+                                className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-medium text-sm sm:text-base rounded-xl transition-all duration-300 transform hover:-translate-y-1 order-3 sm:ml-auto"
+                            >
+                                Logout
+                            </button>
+                        </div>
                     </div>
                 </div>
                 {/* Add Question Section */}
