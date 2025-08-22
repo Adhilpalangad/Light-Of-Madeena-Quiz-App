@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, orderBy, query, where, getDocs,limit } from "firebase/firestore";
 
 export default function Form() {
   const [formData, setFormData] = useState({
@@ -12,25 +12,131 @@ export default function Form() {
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [todaysQuestion, setTodaysQuestion] = useState(null);
 
+  // Updates form data on typing
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
+  useEffect(() => {
+    const fetchTodaysQuestion = async () => {
+      try {
+        const q = query(
+          collection(db, "questions"),
+          where("isActive", "==", true),
+          orderBy("createdAt", "desc"),
+          limit(1)
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const questionDoc = snapshot.docs[0];
+          setTodaysQuestion({ id: questionDoc.id, ...questionDoc.data() });
+        } else {
+          setTodaysQuestion(null); // No active question
+        }
+      } catch (err) {
+        console.error("Error fetching today's question:", err);
+      }
+    };
+
+    fetchTodaysQuestion();
+  }, []);
+
+
+  // inside your component
+  useEffect(() => {
+    const checkPhone = async () => {
+      if (formData.phoneNumber.length < 10) return; // only check when 10+ digits
+
+      try {
+        const q = query(
+          collection(db, "answers"),
+          where("phoneNumber", "==", formData.phoneNumber)
+        );
+        const snapshot = await getDocs(q);
+
+        if (!snapshot.empty) {
+          const data = snapshot.docs[0].data();
+          setFormData(prev => ({
+            ...prev,
+            name: data.name || "",
+            address: data.address || ""
+          }));
+        }
+        // if not found, do nothing
+      } catch (err) {
+        console.error("Error fetching from Firestore:", err);
+      }
+    };
+
+    checkPhone();
+  }, [formData.phoneNumber]); // runs whenever phoneNumber changes
+
+  // Checks Firestore for phone number
+  const handleCheckPhone = async () => {
+    if (formData.phoneNumber.length < 10) return;
+
+    try {
+      const q = query(
+        collection(db, "answers"),
+        where("phoneNumber", "==", formData.phoneNumber)
+      );
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        const data = snapshot.docs[0].data();
+        setFormData(prev => ({
+          ...prev,
+          name: data.name || "",
+          address: data.address || ""
+        }));
+      } else {
+        alert("Phone number not found!");
+      }
+    } catch (err) {
+      console.error("Error fetching from Firestore:", err);
+    }
+  };
+
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!todaysQuestion?.id) {
+      alert("Today's question is not loaded yet. Please wait a moment.");
+      return;
+    }
+
     setIsLoading(true);
     setError("");
     setSuccess("");
 
     try {
+      // 1. Check if this user already submitted for today's question
+      const q = query(
+        collection(db, "answers"),
+        where("questionId", "==", todaysQuestion.id),
+        where("phoneNumber", "==", formData.phoneNumber)
+      );
+
+      const existingSubmissions = await getDocs(q);
+
+      if (!existingSubmissions.empty) {
+        setError("❌ You have already submitted an answer for today's question.");
+        return;
+      }
+
+      // 2. Add new submission if not exists
       await addDoc(collection(db, "answers"), {
         ...formData,
-        createdAt: serverTimestamp()
+        questionId: todaysQuestion.id,
+        submittedAt: serverTimestamp(),
+        isCorrect: false,
+        points: 0
       });
+
       setSuccess("✅ Your submission has been received! May Allah bless you.");
       setFormData({
         name: "",
@@ -86,11 +192,11 @@ export default function Form() {
             </div>
 
             <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent mb-2">
-              Meeelad Submission
+              Light of Madeena
             </h2>
 
             <p className="text-emerald-600 text-lg font-semibold">
-              Share Your Thoughts & Details
+              Online Quiz
             </p>
 
             {/* Decorative line */}
@@ -115,50 +221,48 @@ export default function Form() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Name field */}
+            {/* Full Name */}
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Phone Number <span className="text-red-500">*</span>
+            </label>
             <div className="relative group">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Full Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="name"
-                placeholder="Enter your full name"
-                value={formData.name}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 placeholder-gray-500 hover:shadow-md focus:shadow-lg outline-none"
-              />
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-            </div>
-
-            {/* Phone Number field */}
-            <div className="relative group">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Phone Number <span className="text-red-500">*</span>
-              </label>
               <input
                 type="tel"
                 name="phoneNumber"
                 placeholder="Enter your phone number"
                 value={formData.phoneNumber}
-                onChange={handleChange}
+                onChange={handleChange} // must stay to update state
+                required
+                className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 placeholder-gray-500 hover:shadow-md focus:shadow-lg outline-none"
+              />
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+            </div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Full Name <span className="text-red-500">*</span>
+            </label>
+            <div className="relative group">
+              <input
+                type="text"
+                name="name"
+                placeholder="Enter your full name"
+                value={formData.name}
+                onChange={handleChange} // only update form state
                 required
                 className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 placeholder-gray-500 hover:shadow-md focus:shadow-lg outline-none"
               />
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
             </div>
 
-            {/* Address field */}
+            {/* Address */}
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Address <span className="text-red-500">*</span>
+            </label>
             <div className="relative group">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Address <span className="text-red-500">*</span>
-              </label>
               <textarea
                 name="address"
                 placeholder="Enter your complete address"
                 value={formData.address}
-                onChange={handleChange}
+                onChange={handleChange} // update state
                 required
                 rows="3"
                 className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 placeholder-gray-500 hover:shadow-md focus:shadow-lg outline-none resize-none"
@@ -166,16 +270,26 @@ export default function Form() {
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
             </div>
 
-            {/* Answer field */}
+            {/* Answer */}
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Today's Question
+            </label>
+            <div className="mb-4 p-4 bg-gray-100 rounded-2xl min-h-[60px]">
+              {/*
+    FIX: Access the .questionText property of the object.
+    The `?.` ensures it doesn't crash if todaysQuestion is null.
+  */}
+              <p className="text-gray-800 font-medium">
+                {todaysQuestion?.questionText || "Loading question..."}
+              </p>
+            </div>
+
             <div className="relative group">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Your Answer/Response <span className="text-red-500">*</span>
-              </label>
               <textarea
                 name="answer"
                 placeholder="Write your answer or thoughts about the Meeelad program..."
                 value={formData.answer}
-                onChange={handleChange}
+                onChange={handleChange} // update state
                 required
                 rows="5"
                 className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 placeholder-gray-500 hover:shadow-md focus:shadow-lg outline-none resize-none"
@@ -183,7 +297,7 @@ export default function Form() {
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
             </div>
 
-            {/* Submit button */}
+            {/* Submit */}
             <button
               type="submit"
               disabled={isLoading}
@@ -202,6 +316,7 @@ export default function Form() {
               )}
             </button>
           </form>
+
 
           {/* Footer decoration */}
           <div className="mt-8 text-center">

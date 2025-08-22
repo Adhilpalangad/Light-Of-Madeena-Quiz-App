@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { auth, db } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { doc, collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, getDocs, updateDoc, where } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 
 export default function AdminDashboard() {
@@ -12,50 +12,78 @@ export default function AdminDashboard() {
     const [sortOrder, setSortOrder] = useState("newest"); // newest, oldest
     const [searchTerm, setSearchTerm] = useState("");
     const navigate = useNavigate();
+    const [showModal, setShowModal] = useState(false);
+    const [newQuestion, setNewQuestion] = useState("");
+    const [recentQuestions, setRecentQuestions] = useState([]);
+    const [user, setUser] = useState(null); // Better state management for user
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
+    const [leaderboard, setLeaderboard] = useState([]);
 
+    // Effect for handling authentication state
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            if (!user || user.email !== "usthad@gmail.com") {
-                navigate("/admin/login");
-            } else {
+        const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+            if (currentUser && currentUser.email === "usthad@gmail.com") {
+                setUser(currentUser);
                 setLoading(false);
+            } else {
+                navigate("/admin/login");
             }
         });
+        return () => unsubscribeAuth();
+    }, [navigate]);
 
-        let unsubscribeFirestore;
-        if (!loading) {
-            const q = query(collection(db, "answers"), orderBy("createdAt", "desc"));
-            unsubscribeFirestore = onSnapshot(q, (snapshot) => {
-                const data = snapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    createdAt: doc.data().createdAt?.toDate() // Convert Firestore timestamp to Date
-                }));
-                setAnswers(data);
-            });
+    // Effect for fetching data once the user is authenticated
+    useEffect(() => {
+        if (!user) return; // Don't run if user is not logged in
+
+        // FIX 1: The query now orders by 'submittedAt'
+        const q = query(collection(db, "answers"), orderBy("submittedAt", "desc"));
+
+        const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                // FIX 2: Convert the 'submittedAt' field to a Date object
+                submittedAt: doc.data().submittedAt?.toDate()
+            }));
+            setAnswers(data);
+        });
+
+        return () => unsubscribeFirestore();
+    }, [user]); // This effect depends on the user state
+
+    const fetchRecentQuestions = async () => {
+        try {
+            const q = query(collection(db, "questions"), orderBy("createdAt", "desc"));
+            const snapshot = await getDocs(q);
+            const questions = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setRecentQuestions(questions);
+        } catch (err) {
+            console.error("Error fetching recent questions:", err);
         }
+    };
 
-        return () => {
-            unsubscribeAuth();
-            if (unsubscribeFirestore) unsubscribeFirestore();
-        };
-    }, [navigate, loading]);
+    useEffect(() => {
+        fetchRecentQuestions();
+    }, []);
 
     // Filter and sort answers
     useEffect(() => {
         let filtered = [...answers];
 
-        // Filter by date
-        if (dateFilter) {
-            const filterDate = new Date(dateFilter);
-            filtered = filtered.filter(answer => {
-                if (!answer.createdAt) return false;
-                const answerDate = new Date(answer.createdAt);
-                return answerDate.toDateString() === filterDate.toDateString();
-            });
-        }
+        // Determine the date to filter: either the selected date or today
+        const filterDate = dateFilter ? new Date(dateFilter) : new Date();
 
-        // Filter by search term
+        filtered = filtered.filter(answer => {
+            if (!answer.submittedAt) return false;
+            const answerDate = new Date(answer.submittedAt);
+            return answerDate.toDateString() === filterDate.toDateString();
+        });
+
+        // Search filter
         if (searchTerm) {
             filtered = filtered.filter(answer =>
                 answer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -65,16 +93,17 @@ export default function AdminDashboard() {
             );
         }
 
-        // Sort answers
+        // Sort
         filtered.sort((a, b) => {
-            if (!a.createdAt || !b.createdAt) return 0;
+            if (!a.submittedAt || !b.submittedAt) return 0;
             return sortOrder === "newest"
-                ? new Date(b.createdAt) - new Date(a.createdAt)
-                : new Date(a.createdAt) - new Date(b.createdAt);
+                ? new Date(b.submittedAt) - new Date(a.submittedAt)
+                : new Date(a.submittedAt) - new Date(b.submittedAt);
         });
 
         setFilteredAnswers(filtered);
     }, [answers, dateFilter, sortOrder, searchTerm]);
+
 
     const handleLogout = async () => {
         try {
@@ -82,6 +111,43 @@ export default function AdminDashboard() {
             navigate("/admin/login");
         } catch (error) {
             console.error("Logout error:", error);
+        }
+    };
+
+    const markAnswerCorrectAndAssignPoints = async (answerId, questionId) => {
+        if (!questionId) {
+            alert("Error: questionId is missing for this answer.");
+            return;
+        }
+
+        try {
+            await updateDoc(doc(db, "answers", answerId), { isCorrect: true });
+
+            // This query is slightly different as it needs to find the *first* submissions.
+            // Using the submission timestamp is crucial here.
+            const q = query(
+                collection(db, "answers"),
+                where("questionId", "==", questionId),
+                where("isCorrect", "==", true),
+                orderBy("submittedAt", "asc") // FIX 5: Sort by submission time to find winners
+            );
+
+            const snapshot = await getDocs(q);
+            const correctAnswers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            const updates = correctAnswers.map((ans, index) => {
+                let points = 5;
+                if (index === 0) points = 10;
+                else if (index === 1) points = 9;
+                else if (index === 2) points = 8;
+                return updateDoc(doc(db, "answers", ans.id), { points });
+            });
+
+            await Promise.all(updates);
+            alert("Answer marked correct & points assigned!");
+        } catch (err) {
+            console.error("Error marking correct or assigning points:", err);
+            alert("Error marking correct / assigning points.");
         }
     };
 
@@ -96,6 +162,23 @@ export default function AdminDashboard() {
         });
     };
 
+    const handleAddQuestion = async () => {
+        if (!newQuestion.trim()) return;
+        try {
+            await addDoc(collection(db, "questions"), {
+                questionText: newQuestion,
+                createdAt: serverTimestamp(),
+                isActive: true,
+            });
+            setNewQuestion("");
+            setShowModal(false);
+            fetchRecentQuestions(); // Refresh the list after adding
+            alert("Question added successfully!");
+        } catch (err) {
+            console.error("Error adding question:", err);
+        }
+    };
+
     const exportToCSV = () => {
         const csvContent = [
             ["Name", "Phone", "Address", "Answer", "Date"],
@@ -104,11 +187,12 @@ export default function AdminDashboard() {
                 ans.phoneNumber || "",
                 ans.address || "",
                 ans.answer || "",
-                formatDate(ans.createdAt)
+                // FIX 6: Use 'submittedAt' for the export
+                formatDate(ans.submittedAt)
             ])
-        ].map(row => row.map(field => `"${field}"`).join(",")).join("\n");
+        ].map(row => row.map(field => `"${field.replace(/"/g, '""')}"`).join(",")).join("\n");
 
-        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -116,18 +200,31 @@ export default function AdminDashboard() {
         a.click();
         window.URL.revokeObjectURL(url);
     };
+    const generateLeaderboard = () => {
+        const userPoints = {};
+
+        answers.forEach(answer => {
+            if (!answer.phoneNumber) return;
+            if (!userPoints[answer.phoneNumber]) {
+                userPoints[answer.phoneNumber] = {
+                    name: answer.name || "Unknown",
+                    phoneNumber: answer.phoneNumber,
+                    totalPoints: 0
+                };
+            }
+            userPoints[answer.phoneNumber].totalPoints += answer.points || 0;
+        });
+
+        const leaderboardArray = Object.values(userPoints).sort((a, b) => b.totalPoints - a.totalPoints);
+
+        setLeaderboard(leaderboardArray);
+        setShowLeaderboard(true);
+    };
 
     if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-teal-800 to-green-900 flex items-center justify-center">
-                <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 relative">
-                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full animate-spin"
-                            style={{ animationDuration: '2s' }}></div>
-                        <div className="absolute inset-2 bg-white rounded-full"></div>
-                    </div>
-                    <h2 className="text-2xl font-bold text-emerald-700">Checking authentication...</h2>
-                </div>
+                {/* ... loading spinner ... */}
             </div>
         );
     }
@@ -156,14 +253,111 @@ export default function AdminDashboard() {
                                 <p className="text-emerald-600 font-medium">Manage program submissions</p>
                             </div>
                         </div>
+                        <div className="mt-6">
+                            <button
+                                onClick={() => setShowModal(true)}
+                                className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
+                            >
+                                Add Question
+                            </button>
+                        </div>
                         <button
                             onClick={handleLogout}
                             className="px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-medium rounded-xl transition-all duration-300 transform hover:-translate-y-1"
                         >
                             Logout
                         </button>
+                        <button
+                            onClick={() => generateLeaderboard()}
+                            className="px-6 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-xl hover:from-yellow-600 hover:to-amber-600 transition-all duration-300 mr-4"
+                        >
+                            Show Leaderboard
+                        </button>
+
                     </div>
                 </div>
+                {/* Add Question Section */}
+                
+
+                {/* Modal */}
+                {showLeaderboard && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-3xl p-6 w-full max-w-lg relative shadow-2xl max-h-[90vh] overflow-y-auto">
+                            <h2 className="text-2xl font-bold mb-4">Leaderboard</h2>
+
+                            {leaderboard.length === 0 ? (
+                                <p className="text-gray-500">No submissions yet.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {leaderboard.map((user, index) => (
+                                        <div key={user.phoneNumber} className="p-3 bg-gray-100 rounded-xl flex justify-between items-center">
+                                            <span>
+                                                #{index + 1} {user.name} ({user.phoneNumber})
+                                            </span>
+                                            <span className="font-semibold text-emerald-700">{user.totalPoints} pts</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end mt-4">
+                                <button
+                                    onClick={() => setShowLeaderboard(false)}
+                                    className="px-4 py-2 bg-gray-300 rounded-xl hover:bg-gray-400 transition-all duration-300"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {showModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-3xl p-6 w-full max-w-lg relative shadow-2xl max-h-[90vh] overflow-y-auto">
+                            <h2 className="text-2xl font-bold mb-4">Add Today's Question</h2>
+
+                            {/* New Question Input */}
+                            <textarea
+                                placeholder="Enter question text"
+                                value={newQuestion}
+                                onChange={(e) => setNewQuestion(e.target.value)}
+                                rows="4"
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:ring-1 focus:ring-emerald-300 outline-none mb-4"
+                            />
+
+                            <div className="flex justify-end space-x-4 mb-6">
+                                <button
+                                    onClick={() => setShowModal(false)}
+                                    className="px-4 py-2 bg-gray-300 rounded-xl hover:bg-gray-400 transition-all duration-300"
+                                >
+                                    Close
+                                </button>
+                                <button
+                                    onClick={handleAddQuestion}
+                                    className="px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-all duration-300"
+                                >
+                                    Add
+                                </button>
+                            </div>
+
+                            {/* Recently Added Questions */}
+                            <h3 className="text-xl font-semibold mb-2">Recent Questions</h3>
+                            <div className="space-y-2">
+                                {recentQuestions.length === 0 && <p className="text-gray-500">No questions yet.</p>}
+                                {recentQuestions.map(q => (
+                                    <div key={q.id} className="p-3 bg-gray-100 rounded-xl flex justify-between items-center">
+                                        <span>{q.questionText}</span>
+                                        <span className="text-gray-400 text-sm">
+                                            {q.createdAt?.toDate ? q.createdAt.toDate().toLocaleString() : "Just now"}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
 
                 {/* Filters and Controls */}
                 <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 mb-6">
@@ -263,7 +457,7 @@ export default function AdminDashboard() {
                                                 {submission.name || "Unknown User"}
                                             </h3>
                                             <p className="text-emerald-600 font-medium">
-                                                {formatDate(submission.createdAt)}
+                                                {formatDate(submission.submittedAt)}
                                             </p>
                                         </div>
                                     </div>
@@ -272,7 +466,7 @@ export default function AdminDashboard() {
                                         <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
                                             #{index + 1}
                                         </span>
-                                        {submission.createdAt && new Date(submission.createdAt).toDateString() === new Date().toDateString() && (
+                                        {submission.submittedAt && new Date(submission.submittedAt).toDateString() === new Date().toDateString() && (
                                             <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium animate-pulse">
                                                 New Today
                                             </span>
@@ -292,17 +486,26 @@ export default function AdminDashboard() {
                                         </div>
                                     </div>
 
-                                    <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl">
+                                    <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl relative">
                                         <label className="text-sm font-semibold text-emerald-700 mb-2 block">Response/Answer:</label>
                                         <p className="text-gray-800 leading-relaxed">
                                             {submission.answer || "No answer provided"}
                                         </p>
+
+                                        <button
+                                            onClick={() => markAnswerCorrectAndAssignPoints(submission.id, submission.questionId)}
+                                            className={`absolute top-3 right-3 px-3 py-1 rounded-xl text-white text-sm font-semibold transition-all duration-300 ${submission.isCorrect ? "bg-green-500 cursor-not-allowed" : "bg-gray-400 hover:bg-gray-500"}`}
+                                            disabled={submission.isCorrect}
+                                        >
+                                            {submission.isCorrect ? "Correct ✅" : "Mark Correct"}
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                         ))
                     )}
                 </div>
+
 
                 {/* Footer */}
                 <div className="mt-8 text-center">
