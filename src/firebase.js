@@ -4,14 +4,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDLTBcj6HH3i9TtVypmwMo8sCpBi-WvKL0",
-  authDomain: "daily-questions-app-c7f27.firebaseapp.com",
-  projectId: "daily-questions-app-c7f27",
-  storageBucket: "daily-questions-app-c7f27.appspot.com",  // 🔥 fixed: `.app` → `.appspot.com`
-  messagingSenderId: "516096334908",
-  appId: "1:516096334908:web:edef81f497bbc78e107739"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
-
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
