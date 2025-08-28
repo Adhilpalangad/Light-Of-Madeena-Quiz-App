@@ -1,25 +1,31 @@
 import { useEffect, useState } from "react";
 import { auth, db } from "../firebase";
-import { useNavigate } from "react-router-dom";
 import { doc, collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, getDocs, updateDoc, where } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import { Eye, Plus, Trophy, Download, Search, Calendar, LogOut, X, Save } from "lucide-react";
 
 export default function AdminDashboard() {
-    const [answers, setAnswers] = useState([]);
-    const [filteredAnswers, setFilteredAnswers] = useState([]);
+    const [submissions, setSubmissions] = useState([]);
+    const [filteredSubmissions, setFilteredSubmissions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [dateFilter, setDateFilter] = useState("");
-    const [sortOrder, setSortOrder] = useState("newest"); // newest, oldest
+    const [sortOrder, setSortOrder] = useState("newest");
     const [searchTerm, setSearchTerm] = useState("");
-    const navigate = useNavigate();
-    const [showModal, setShowModal] = useState(false);
+    const navigate = (path) => {
+        // Simple navigation replacement - you can implement routing logic here
+        window.location.href = path;
+    };
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [selectedSubmission, setSelectedSubmission] = useState(null);
     const [newQuestion, setNewQuestion] = useState("");
-    const [recentQuestions, setRecentQuestions] = useState([]);
-    const [user, setUser] = useState(null); // Better state management for user
+    const [user, setUser] = useState(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [leaderboard, setLeaderboard] = useState([]);
+    const [newOptions, setNewOptions] = useState(["", "", "", ""]);
+    const [correctAnswer, setCorrectAnswer] = useState("");
 
-    // Effect for handling authentication state
+    // Authentication check
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
             if (currentUser && currentUser.email === "usthad@gmail.com") {
@@ -32,64 +38,44 @@ export default function AdminDashboard() {
         return () => unsubscribeAuth();
     }, [navigate]);
 
-    // Effect for fetching data once the user is authenticated
+    // Fetch submissions
     useEffect(() => {
-        if (!user) return; // Don't run if user is not logged in
+        if (!user) return;
 
-        // FIX 1: The query now orders by 'submittedAt'
-        const q = query(collection(db, "answers"), orderBy("submittedAt", "desc"));
-
-        const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+        const q = query(collection(db, "submissions"), orderBy("submittedAt", "desc"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map((doc) => ({
                 id: doc.id,
                 ...doc.data(),
-                // FIX 2: Convert the 'submittedAt' field to a Date object
-                submittedAt: doc.data().submittedAt?.toDate()
+                submittedAt: doc.data().submittedAt?.toDate(),
             }));
-            setAnswers(data);
+            setSubmissions(data);
         });
 
-        return () => unsubscribeFirestore();
-    }, [user]); // This effect depends on the user state
+        return () => unsubscribe();
+    }, [user]);
 
-    const fetchRecentQuestions = async () => {
-        try {
-            const q = query(collection(db, "questions"), orderBy("createdAt", "desc"));
-            const snapshot = await getDocs(q);
-            const questions = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setRecentQuestions(questions);
-        } catch (err) {
-            console.error("Error fetching recent questions:", err);
+    // Filter and sort submissions
+    useEffect(() => {
+        let filtered = [...submissions];
+
+        // Date filter
+        if (dateFilter) {
+            const filterDate = new Date(dateFilter);
+            filtered = filtered.filter(submission => {
+                if (!submission.submittedAt) return false;
+                const submissionDate = new Date(submission.submittedAt);
+                return submissionDate.toDateString() === filterDate.toDateString();
+            });
         }
-    };
-
-    useEffect(() => {
-        fetchRecentQuestions();
-    }, []);
-
-    // Filter and sort answers
-    useEffect(() => {
-        let filtered = [...answers];
-
-        // Determine the date to filter: either the selected date or today
-        const filterDate = dateFilter ? new Date(dateFilter) : new Date();
-
-        filtered = filtered.filter(answer => {
-            if (!answer.submittedAt) return false;
-            const answerDate = new Date(answer.submittedAt);
-            return answerDate.toDateString() === filterDate.toDateString();
-        });
 
         // Search filter
         if (searchTerm) {
-            filtered = filtered.filter(answer =>
-                answer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                answer.answer?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                answer.phoneNumber?.includes(searchTerm) ||
-                answer.address?.toLowerCase().includes(searchTerm.toLowerCase())
+            filtered = filtered.filter(submission =>
+                submission.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                submission.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                submission.number?.includes(searchTerm) ||
+                submission.place?.toLowerCase().includes(searchTerm.toLowerCase())
             );
         }
 
@@ -101,9 +87,8 @@ export default function AdminDashboard() {
                 : new Date(a.submittedAt) - new Date(b.submittedAt);
         });
 
-        setFilteredAnswers(filtered);
-    }, [answers, dateFilter, sortOrder, searchTerm]);
-
+        setFilteredSubmissions(filtered);
+    }, [submissions, dateFilter, sortOrder, searchTerm]);
 
     const handleLogout = async () => {
         try {
@@ -111,43 +96,6 @@ export default function AdminDashboard() {
             navigate("/admin/login");
         } catch (error) {
             console.error("Logout error:", error);
-        }
-    };
-
-    const markAnswerCorrectAndAssignPoints = async (answerId, questionId) => {
-        if (!questionId) {
-            alert("Error: questionId is missing for this answer.");
-            return;
-        }
-
-        try {
-            await updateDoc(doc(db, "answers", answerId), { isCorrect: true });
-
-            // This query is slightly different as it needs to find the *first* submissions.
-            // Using the submission timestamp is crucial here.
-            const q = query(
-                collection(db, "answers"),
-                where("questionId", "==", questionId),
-                where("isCorrect", "==", true),
-                orderBy("submittedAt", "asc") // FIX 5: Sort by submission time to find winners
-            );
-
-            const snapshot = await getDocs(q);
-            const correctAnswers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            const updates = correctAnswers.map((ans, index) => {
-                let points = 5;
-                if (index === 0) points = 10;
-                else if (index === 1) points = 9;
-                else if (index === 2) points = 8;
-                return updateDoc(doc(db, "answers", ans.id), { points });
-            });
-
-            await Promise.all(updates);
-            alert("Answer marked correct & points assigned!");
-        } catch (err) {
-            console.error("Error marking correct or assigning points:", err);
-            alert("Error marking correct / assigning points.");
         }
     };
 
@@ -163,261 +111,157 @@ export default function AdminDashboard() {
     };
 
     const handleAddQuestion = async () => {
-        if (!newQuestion.trim()) return;
+        if (!newQuestion.trim() || newOptions.some(opt => !opt.trim()) || !correctAnswer) {
+            alert("Please fill all fields and select the correct answer.");
+            return;
+        }
+
         try {
             await addDoc(collection(db, "questions"), {
                 questionText: newQuestion,
+                options: newOptions.filter(opt => opt.trim()),
+                correctAnswer,
                 createdAt: serverTimestamp(),
                 isActive: true,
             });
+
+            // Reset form
             setNewQuestion("");
-            setShowModal(false);
-            fetchRecentQuestions(); // Refresh the list after adding
+            setNewOptions(["", "", "", ""]);
+            setCorrectAnswer("");
+            setShowAddModal(false);
             alert("Question added successfully!");
         } catch (err) {
             console.error("Error adding question:", err);
+            alert("Failed to add question.");
         }
     };
 
     const exportToCSV = () => {
         const csvContent = [
-            ["Name", "Phone", "Address", "Answer", "Date"],
-            ...filteredAnswers.map(ans => [
-                ans.name || "",
-                ans.phoneNumber || "",
-                ans.address || "",
-                ans.answer || "",
-                // FIX 6: Use 'submittedAt' for the export
-                formatDate(ans.submittedAt)
+            ["Name", "Email", "Phone", "Place", "Questions Answered", "Total Questions", "Score", "Date"],
+            ...filteredSubmissions.map(sub => [
+                sub.name || "",
+                sub.email || "",
+                sub.number || "",
+                sub.place || "",
+                sub.answeredQuestions || sub.answers?.length || 0,
+                sub.totalQuestions || 0,
+                `${sub.answers?.filter(a => a.isCorrect).length || 0}/${sub.answers?.length || 0}`,
+                formatDate(sub.submittedAt)
             ])
-        ].map(row => row.map(field => `"${field.replace(/"/g, '""')}"`).join(",")).join("\n");
+        ].map(row => row.map(field => `"${field.toString().replace(/"/g, '""')}"`).join(",")).join("\n");
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `meeelad_submissions_${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = `islamic_quiz_submissions_${new Date().toISOString().split('T')[0]}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
     };
-    const generateLeaderboard = () => {
-        const userPoints = {};
 
-        answers.forEach(answer => {
-            if (!answer.phoneNumber) return;
-            if (!userPoints[answer.phoneNumber]) {
-                userPoints[answer.phoneNumber] = {
-                    name: answer.name || "Unknown",
-                    phoneNumber: answer.phoneNumber,
-                    totalPoints: 0
-                };
-            }
-            userPoints[answer.phoneNumber].totalPoints += answer.points || 0;
-        });
+    const calculateScore = (answers) => {
+        if (!answers || !Array.isArray(answers)) return { correct: 0, total: 0 };
+        const correct = answers.filter(a => a.isCorrect).length;
+        return { correct, total: answers.length };
+    };
 
-        const leaderboardArray = Object.values(userPoints).sort((a, b) => b.totalPoints - a.totalPoints);
-
-        setLeaderboard(leaderboardArray);
-        setShowLeaderboard(true);
+    const viewDetails = (submission) => {
+        setSelectedSubmission(submission);
+        setShowDetailModal(true);
     };
 
     if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-teal-800 to-green-900 flex items-center justify-center">
-                {/* ... loading spinner ... */}
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-white text-lg">Loading Dashboard...</p>
+                </div>
             </div>
         );
     }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-teal-800 to-green-900 p-4">
-            {/* Background decorations */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-10 left-10 w-20 h-20 bg-yellow-400/10 rounded-full animate-pulse"></div>
-                <div className="absolute top-32 right-20 w-16 h-16 bg-amber-300/10 rounded-full animate-bounce animation-delay-300"></div>
-                <div className="absolute bottom-20 left-32 w-24 h-24 bg-yellow-500/5 rounded-full animate-pulse animation-delay-700"></div>
-            </div>
-
-            <div className="relative z-10 max-w-7xl mx-auto">
+            <div className="max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-4 sm:p-6 mb-6">
-                    <div className="flex flex-col space-y-4">
-                        {/* Header Section */}
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex items-center mb-4 sm:mb-0">
-                                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full flex items-center justify-center mr-3 sm:mr-4">
-                                    <div className="w-5 h-5 sm:w-6 sm:h-6 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full"></div>
-                                </div>
-                                <div>
-                                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
-                                        Meeelad Admin Dashboard
-                                    </h1>
-                                    <p className="text-sm sm:text-base text-emerald-600 font-medium">Manage program submissions</p>
-                                </div>
-                            </div>
+                <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 mb-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <h1 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
+                                Islamic Quiz Admin
+                            </h1>
+                            <p className="text-emerald-600 font-medium">Manage quiz submissions and questions</p>
                         </div>
 
-                        {/* Buttons Section */}
-                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                        <div className="flex flex-wrap gap-3">
                             <button
-                                onClick={() => setShowModal(true)}
-                                className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm sm:text-base rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-300 order-1"
+                                onClick={() => setShowAddModal(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
                             >
+                                <Plus className="w-4 h-4" />
                                 Add Question
                             </button>
 
                             <button
-                                onClick={() => generateLeaderboard()}
-                                className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-sm sm:text-base rounded-xl hover:from-yellow-600 hover:to-amber-600 transition-all duration-300 order-2"
+                                onClick={exportToCSV}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-300"
                             >
-                                Show Leaderboard
+                                <Download className="w-4 h-4" />
+                                Export CSV
                             </button>
 
                             <button
                                 onClick={handleLogout}
-                                className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-medium text-sm sm:text-base rounded-xl transition-all duration-300 transform hover:-translate-y-1 order-3 sm:ml-auto"
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl hover:from-red-600 hover:to-red-700 transition-all duration-300"
                             >
+                                <LogOut className="w-4 h-4" />
                                 Logout
                             </button>
                         </div>
                     </div>
                 </div>
-                {/* Add Question Section */}
-                
 
-                {/* Modal */}
-                {showLeaderboard && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-3xl p-6 w-full max-w-lg relative shadow-2xl max-h-[90vh] overflow-y-auto">
-                            <h2 className="text-2xl font-bold mb-4">Leaderboard</h2>
-
-                            {leaderboard.length === 0 ? (
-                                <p className="text-gray-500">No submissions yet.</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {leaderboard.map((user, index) => (
-                                        <div key={user.phoneNumber} className="p-3 bg-gray-100 rounded-xl flex justify-between items-center">
-                                            <span>
-                                                #{index + 1} {user.name} ({user.phoneNumber})
-                                            </span>
-                                            <span className="font-semibold text-emerald-700">{user.totalPoints} pts</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            <div className="flex justify-end mt-4">
-                                <button
-                                    onClick={() => setShowLeaderboard(false)}
-                                    className="px-4 py-2 bg-gray-300 rounded-xl hover:bg-gray-400 transition-all duration-300"
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {showModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-3xl p-6 w-full max-w-lg relative shadow-2xl max-h-[90vh] overflow-y-auto">
-                            <h2 className="text-2xl font-bold mb-4">Add Today's Question</h2>
-
-                            {/* New Question Input */}
-                            <textarea
-                                placeholder="Enter question text"
-                                value={newQuestion}
-                                onChange={(e) => setNewQuestion(e.target.value)}
-                                rows="4"
-                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:ring-1 focus:ring-emerald-300 outline-none mb-4"
-                            />
-
-                            <div className="flex justify-end space-x-4 mb-6">
-                                <button
-                                    onClick={() => setShowModal(false)}
-                                    className="px-4 py-2 bg-gray-300 rounded-xl hover:bg-gray-400 transition-all duration-300"
-                                >
-                                    Close
-                                </button>
-                                <button
-                                    onClick={handleAddQuestion}
-                                    className="px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-all duration-300"
-                                >
-                                    Add
-                                </button>
-                            </div>
-
-                            {/* Recently Added Questions */}
-                            <h3 className="text-xl font-semibold mb-2">Recent Questions</h3>
-                            <div className="space-y-2">
-                                {recentQuestions.length === 0 && <p className="text-gray-500">No questions yet.</p>}
-                                {recentQuestions.map(q => (
-                                    <div key={q.id} className="p-3 bg-gray-100 rounded-xl flex justify-between items-center">
-                                        <span>{q.questionText}</span>
-                                        <span className="text-gray-400 text-sm">
-                                            {q.createdAt?.toDate ? q.createdAt.toDate().toLocaleString() : "Just now"}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-
-                {/* Filters and Controls */}
+                {/* Filters */}
                 <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 mb-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                        {/* Search */}
-                        <div className="relative group">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                             <input
                                 type="text"
-                                placeholder="Search by name, answer, phone..."
+                                placeholder="Search by name, email, phone..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 placeholder-gray-500 outline-none"
+                                className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 outline-none transition-colors"
                             />
-                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                         </div>
 
-                        {/* Date Filter */}
-                        <div className="relative group">
+                        <div className="relative">
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                             <input
                                 type="date"
                                 value={dateFilter}
                                 onChange={(e) => setDateFilter(e.target.value)}
-                                className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 outline-none"
+                                className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 outline-none transition-colors"
                             />
-                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                         </div>
 
-                        {/* Sort Order */}
-                        <div className="relative group">
-                            <select
-                                value={sortOrder}
-                                onChange={(e) => setSortOrder(e.target.value)}
-                                className="w-full px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-2xl focus:border-emerald-500 focus:bg-white transition-all duration-300 text-gray-700 outline-none"
-                            >
-                                <option value="newest">Newest First</option>
-                                <option value="oldest">Oldest First</option>
-                            </select>
-                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                        </div>
-
-                        {/* Export Button */}
-                        <button
-                            onClick={exportToCSV}
-                            className="px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-medium rounded-2xl transition-all duration-300 transform hover:-translate-y-1"
+                        <select
+                            value={sortOrder}
+                            onChange={(e) => setSortOrder(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 outline-none transition-colors"
                         >
-                            Export CSV
-                        </button>
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
                     </div>
 
-                    {/* Clear Filters */}
                     {(dateFilter || searchTerm) && (
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
                             <span className="text-emerald-700 font-medium">
-                                Showing {filteredAnswers.length} of {answers.length} submissions
+                                Showing {filteredSubmissions.length} of {submissions.length} submissions
                             </span>
                             <button
                                 onClick={() => {
@@ -432,116 +276,265 @@ export default function AdminDashboard() {
                     )}
                 </div>
 
-                {/* Submissions List */}
-                <div className="space-y-4">
-                    {filteredAnswers.length === 0 ? (
+                {/* Submissions Grid */}
+                <div className="grid gap-4">
+                    {filteredSubmissions.length === 0 ? (
                         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-12 text-center">
                             <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-gray-300 to-gray-400 rounded-full flex items-center justify-center">
-                                <div className="w-8 h-8 bg-white rounded-full"></div>
+                                <Search className="w-8 h-8 text-white" />
                             </div>
                             <h3 className="text-xl font-bold text-gray-600 mb-2">No submissions found</h3>
                             <p className="text-gray-500">
-                                {answers.length === 0
+                                {submissions.length === 0
                                     ? "No submissions have been received yet."
                                     : "Try adjusting your filters to see more results."}
                             </p>
                         </div>
                     ) : (
-                        filteredAnswers.map((submission, index) => (
-                            <div
-                                key={submission.id}
-                                className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 transform hover:scale-105 transition-all duration-300 animate-fade-in"
-                                style={{ animationDelay: `${index * 100}ms` }}
-                            >
-                                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between mb-4">
-                                    <div className="flex items-center mb-3 lg:mb-0">
-                                        <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
-                                            {(submission.name || "U").charAt(0).toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <h3 className="text-lg font-bold text-gray-800">
-                                                {submission.name || "Unknown User"}
-                                            </h3>
-                                            <p className="text-emerald-600 font-medium">
-                                                {formatDate(submission.submittedAt)}
-                                            </p>
-                                        </div>
-                                    </div>
+                        filteredSubmissions.map((submission, index) => {
+                            const score = calculateScore(submission.answers);
+                            const percentage = score.total > 0 ? Math.round((score.correct / score.total) * 100) : 0;
 
-                                    <div className="flex flex-wrap gap-2">
-                                        <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
-                                            #{index + 1}
-                                        </span>
-                                        {submission.submittedAt && new Date(submission.submittedAt).toDateString() === new Date().toDateString() && (
-                                            <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium animate-pulse">
-                                                New Today
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
+                            return (
+                                <div
+                                    key={submission.id}
+                                    className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-6"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold">
+                                                {(submission.name || "U").charAt(0).toUpperCase()}
+                                            </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
-                                    <div className="space-y-3">
-                                        <div className="p-3 bg-gray-50 rounded-xl">
-                                            <label className="text-sm font-semibold text-gray-600 mb-1 block">Phone Number:</label>
-                                            <p className="text-gray-800">{submission.phoneNumber || "Not provided"}</p>
+                                            <div>
+                                                <h3 className="text-lg font-bold text-gray-800">
+                                                    {submission.name || "Unknown User"}
+                                                </h3>
+                                                <div className="flex flex-wrap gap-4 text-sm text-gray-600 mt-1">
+                                                    <span>{submission.email}</span>
+                                                    <span>{submission.number}</span>
+                                                    <span>{submission.place}</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="p-3 bg-gray-50 rounded-xl">
-                                            <label className="text-sm font-semibold text-gray-600 mb-1 block">Address:</label>
-                                            <p className="text-gray-800">{submission.address || "Not provided"}</p>
+
+                                        <div className="flex items-center gap-4">
+                                            {/* Score Badge */}
+                                            <div className="text-center">
+                                                <div className={`px-3 py-1 rounded-full text-sm font-bold ${percentage >= 80 ? 'bg-green-100 text-green-800' :
+                                                        percentage >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-red-100 text-red-800'
+                                                    }`}>
+                                                    {score.correct}/{score.total} ({percentage}%)
+                                                </div>
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                    {formatDate(submission.submittedAt)}
+                                                </div>
+                                            </div>
+
+                                            {/* View Details Button */}
+                                            <button
+                                                onClick={() => viewDetails(submission)}
+                                                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
+                                            >
+                                                <Eye className="w-4 h-4" />
+                                                View
+                                            </button>
                                         </div>
-                                    </div>
-
-                                    <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl relative">
-                                        <label className="text-sm font-semibold text-emerald-700 mb-2 block">Response/Answer:</label>
-                                        <p className="text-gray-800 leading-relaxed">
-                                            {submission.answer || "No answer provided"}
-                                        </p>
-
-                                        <button
-                                            onClick={() => markAnswerCorrectAndAssignPoints(submission.id, submission.questionId)}
-                                            className={`absolute top-3 right-3 px-3 py-1 rounded-xl text-white text-sm font-semibold transition-all duration-300 ${submission.isCorrect ? "bg-green-500 cursor-not-allowed" : "bg-gray-400 hover:bg-gray-500"}`}
-                                            disabled={submission.isCorrect}
-                                        >
-                                            {submission.isCorrect ? "Correct ✅" : "Mark Correct"}
-                                        </button>
                                     </div>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
 
-
-                {/* Footer */}
-                <div className="mt-8 text-center">
-                    <div className="inline-flex items-center space-x-2 px-6 py-3 bg-white/20 backdrop-blur-sm rounded-full">
-                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                        <span className="text-white/80 font-medium ml-4">
-                            Total Submissions: {answers.length}
-                        </span>
+                {/* Stats Footer */}
+                <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 text-center">
+                        <div className="text-2xl font-bold text-white">{submissions.length}</div>
+                        <div className="text-white/80">Total Submissions</div>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 text-center">
+                        <div className="text-2xl font-bold text-white">{filteredSubmissions.length}</div>
+                        <div className="text-white/80">Filtered Results</div>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 text-center">
+                        <div className="text-2xl font-bold text-white">
+                            {submissions.filter(s => s.submittedAt && new Date(s.submittedAt).toDateString() === new Date().toDateString()).length}
+                        </div>
+                        <div className="text-white/80">Today's Submissions</div>
                     </div>
                 </div>
             </div>
 
-            {/* Custom CSS for animations */}
-            <style jsx>{`
-                @keyframes fade-in {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .animate-fade-in {
-                    animation: fade-in 0.6s ease-out forwards;
-                }
-                .animation-delay-300 {
-                    animation-delay: 300ms;
-                }
-                .animation-delay-700 {
-                    animation-delay: 700ms;
-                }
-            `}</style>
+            {/* Add Question Modal */}
+            {showAddModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-2xl font-bold text-emerald-800">Add New Question</h2>
+                            <button
+                                onClick={() => setShowAddModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Question Text</label>
+                                <textarea
+                                    placeholder="Enter your question..."
+                                    value={newQuestion}
+                                    onChange={(e) => setNewQuestion(e.target.value)}
+                                    rows="3"
+                                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 outline-none transition-colors"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Answer Options</label>
+                                {[0, 1, 2, 3].map((i) => (
+                                    <input
+                                        key={i}
+                                        type="text"
+                                        placeholder={`Option ${i + 1}`}
+                                        value={newOptions[i] || ""}
+                                        onChange={(e) => {
+                                            const opts = [...newOptions];
+                                            opts[i] = e.target.value;
+                                            setNewOptions(opts);
+                                        }}
+                                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-emerald-500 outline-none transition-colors mb-2"
+                                    />
+                                ))}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Correct Answer</label>
+                                <select
+                                    value={correctAnswer}
+                                    onChange={(e) => setCorrectAnswer(e.target.value)}
+                                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 outline-none transition-colors"
+                                >
+                                    <option value="">Select Correct Answer</option>
+                                    {newOptions.filter(opt => opt.trim()).map((opt, idx) => (
+                                        <option key={idx} value={opt}>{opt}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => setShowAddModal(false)}
+                                    className="flex-1 px-4 py-3 bg-gray-300 text-gray-700 rounded-xl hover:bg-gray-400 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleAddQuestion}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
+                                >
+                                    <Save className="w-4 h-4" />
+                                    Add Question
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* View Details Modal */}
+            {showDetailModal && selectedSubmission && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-emerald-800">
+                                    {selectedSubmission.name}'s Results
+                                </h2>
+                                <p className="text-gray-600">{formatDate(selectedSubmission.submittedAt)}</p>
+                            </div>
+                            <button
+                                onClick={() => setShowDetailModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        {/* User Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-xl">
+                            <div><strong>Name:</strong> {selectedSubmission.name}</div>
+                            <div><strong>Email:</strong> {selectedSubmission.email}</div>
+                            <div><strong>Phone:</strong> {selectedSubmission.number}</div>
+                            <div><strong>Place:</strong> {selectedSubmission.place}</div>
+                        </div>
+
+                        {/* Score Summary */}
+                        <div className="mb-6 p-4 bg-emerald-50 rounded-xl">
+                            <h3 className="text-lg font-semibold text-emerald-800 mb-2">Quiz Summary</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="text-center">
+                                    <div className="text-2xl font-bold text-emerald-600">
+                                        {calculateScore(selectedSubmission.answers).correct}
+                                    </div>
+                                    <div className="text-sm text-gray-600">Correct Answers</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-2xl font-bold text-gray-600">
+                                        {calculateScore(selectedSubmission.answers).total}
+                                    </div>
+                                    <div className="text-sm text-gray-600">Total Answered</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-2xl font-bold text-blue-600">
+                                        {Math.round((calculateScore(selectedSubmission.answers).correct / calculateScore(selectedSubmission.answers).total) * 100) || 0}%
+                                    </div>
+                                    <div className="text-sm text-gray-600">Score</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Detailed Answers */}
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-4">Question by Question Results</h3>
+                            <div className="space-y-4 max-h-96 overflow-y-auto">
+                                {selectedSubmission.answers?.length > 0 ? (
+                                    selectedSubmission.answers.map((ans, i) => (
+                                        <div
+                                            key={i}
+                                            className={`p-4 rounded-xl border-2 ${ans.isCorrect
+                                                    ? 'bg-green-50 border-green-200'
+                                                    : 'bg-red-50 border-red-200'
+                                                }`}
+                                        >
+                                            <p className="font-medium text-gray-800 mb-2">
+                                                Q{i + 1}: {ans.questionText}
+                                            </p>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                                <div>
+                                                    <strong className={ans.isCorrect ? 'text-green-700' : 'text-red-700'}>
+                                                        User Answer:
+                                                    </strong>
+                                                    <span className="ml-1">{ans.selected || "Not answered"}</span>
+                                                </div>
+                                                <div>
+                                                    <strong className="text-green-700">Correct Answer: </strong>
+                                                    <span className="ml-1">{ans.correctAnswer}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-gray-500 italic">No answers submitted</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

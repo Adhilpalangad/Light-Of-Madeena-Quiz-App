@@ -1,5 +1,5 @@
 import { Routes, Route } from "react-router-dom";
-import Form from "./pages/Form";
+import QuizFlow from "./pages/QuizFlow";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import "./App.css";
@@ -7,7 +7,7 @@ import "./App.css";
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Form />} />
+      <Route path="/" element={<QuizFlow />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={<AdminDashboard />} />
     </Routes>
