@@ -386,28 +386,31 @@ export default function Leaderboard() {
 
                 {/* Search Section */}
                 <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl p-8 mb-8 border border-emerald-200 transform hover:scale-105 transition-all duration-300">
-                    <h3 className="text-2xl font-bold text-emerald-800 mb-6 flex items-center gap-3">
+                    <h3 className="text-2xl font-bold text-emerald-800 mb-6 flex items-center gap-3 flex-wrap">
                         <Search className="w-7 h-7" />
                         Find Your Result
                         <Sparkles className="w-5 h-5 text-emerald-600 animate-pulse" />
                     </h3>
-                    <div className="flex gap-4">
+
+                    <div className="flex flex-col sm:flex-row gap-4">
                         <input
                             type="text"
                             placeholder="Enter your phone number"
                             value={searchNumber}
                             onChange={(e) => setSearchNumber(e.target.value)}
-                            className="flex-1 px-6 py-4 border-2 border-emerald-300 rounded-2xl focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 transition-all bg-white/80 text-lg"
+                            className="w-full sm:flex-1 px-6 py-4 border-2 border-emerald-300 rounded-2xl focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 transition-all bg-white/80 text-lg"
                         />
+
                         <button
                             onClick={handleSearch}
-                            className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-2xl hover:from-emerald-700 hover:to-teal-700 hover:scale-105 transition-all shadow-xl font-bold text-lg flex items-center gap-3"
+                            className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-2xl hover:from-emerald-700 hover:to-teal-700 hover:scale-105 transition-all shadow-xl font-bold text-lg flex items-center justify-center gap-3"
                         >
                             <Search className="w-5 h-5" />
                             Search
                         </button>
                     </div>
                 </div>
+
 
                 {/* Search Result */}
                 {searchResult && (
