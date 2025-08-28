@@ -191,7 +191,7 @@ export default function AdminDashboard() {
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                             <h1 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
-                                Islamic Quiz Admin
+                                Quiz Admin
                             </h1>
                             <p className="text-emerald-600 font-medium">Manage quiz submissions and questions</p>
                         </div>
@@ -322,8 +322,8 @@ export default function AdminDashboard() {
                                             {/* Score Badge */}
                                             <div className="text-center">
                                                 <div className={`px-3 py-1 rounded-full text-sm font-bold ${percentage >= 80 ? 'bg-green-100 text-green-800' :
-                                                        percentage >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                                                            'bg-red-100 text-red-800'
+                                                    percentage >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-red-100 text-red-800'
                                                     }`}>
                                                     {score.correct}/{score.total} ({percentage}%)
                                                 </div>
@@ -506,8 +506,8 @@ export default function AdminDashboard() {
                                         <div
                                             key={i}
                                             className={`p-4 rounded-xl border-2 ${ans.isCorrect
-                                                    ? 'bg-green-50 border-green-200'
-                                                    : 'bg-red-50 border-red-200'
+                                                ? 'bg-green-50 border-green-200'
+                                                : 'bg-red-50 border-red-200'
                                                 }`}
                                         >
                                             <p className="font-medium text-gray-800 mb-2">

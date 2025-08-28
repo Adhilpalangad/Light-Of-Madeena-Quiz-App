@@ -218,10 +218,10 @@ export default function QuizFlow() {
                                 <Star className="w-8 h-8 text-amber-500 fill-current" />
                             </div>
                             <h1 className="text-3xl sm:text-4xl font-bold text-emerald-800 mb-2">
-                                Islamic Knowledge Quiz
+                                Meelad Quiz
                             </h1>
                             <p className="text-emerald-600 text-sm sm:text-base">
-                                Test your understanding of Islam
+                                Light Of Madeena
                             </p>
                         </div>
 
@@ -273,7 +273,7 @@ export default function QuizFlow() {
                                 onClick={handleStart}
                                 className="w-full px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-semibold hover:from-emerald-700 hover:to-teal-700 transition-all duration-300 shadow-lg transform hover:scale-105"
                             >
-                                Begin Islamic Quiz
+                                Start Quiz
                             </button>
 
                             <div className="text-center text-sm text-emerald-600 opacity-80">
@@ -291,7 +291,7 @@ export default function QuizFlow() {
                                 <div className="flex items-center gap-2">
                                     <BookOpen className="w-6 h-6 text-emerald-600" />
                                     <h1 className="text-xl sm:text-2xl font-bold text-emerald-800">
-                                        Islamic Quiz
+                                        Meelad Quiz
                                     </h1>
                                 </div>
                                 <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2 rounded-xl">
