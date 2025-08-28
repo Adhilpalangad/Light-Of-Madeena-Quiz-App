@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { auth, db } from "../firebase";
-import { doc, collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, getDocs, updateDoc, where } from "firebase/firestore";
+import { doc, collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, getDocs, updateDoc, where, getDoc, setDoc } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { Eye, Plus, Trophy, Download, Search, Calendar, LogOut, X, Save } from "lucide-react";
+import { Eye, Plus, Trophy, Download, Calendar, LogOut, X, Save, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function AdminDashboard() {
     const [submissions, setSubmissions] = useState([]);
@@ -24,7 +24,33 @@ export default function AdminDashboard() {
     const [leaderboard, setLeaderboard] = useState([]);
     const [newOptions, setNewOptions] = useState(["", "", "", ""]);
     const [correctAnswer, setCorrectAnswer] = useState("");
+    const [enabled, setEnabled] = useState(true);
+    
+    useEffect(() => {
+        const fetchStatus = async () => {
+            const docRef = doc(db, "quizSettings", "quizControl");
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                setEnabled(snap.data().enabled);
+            }
+        };
+        fetchStatus();
+    }, []);
 
+    const toggleQuiz = async () => {
+        const docRef = doc(db, "quizSettings", "quizControl");
+        const snap = await getDoc(docRef);
+
+        if (snap.exists()) {
+            // ✅ Update if it already exists
+            await updateDoc(docRef, { enabled: !enabled });
+            setEnabled(!enabled);
+        } else {
+            // 🆕 Create if it doesn't exist yet
+            await setDoc(docRef, { enabled: true }); // default to enabled
+            setEnabled(true);
+        }
+    };
     // Authentication check
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -136,7 +162,15 @@ export default function AdminDashboard() {
             alert("Failed to add question.");
         }
     };
+    // Add these state variables at the top of your component
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(10);
 
+    // Add this pagination logic before your JSX
+    const totalPages = Math.ceil(filteredSubmissions.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const currentSubmissions = filteredSubmissions.slice(startIndex, endIndex);
     const exportToCSV = () => {
         const csvContent = [
             ["Name", "Email", "Phone", "Place", "Questions Answered", "Total Questions", "Score", "Date"],
@@ -220,6 +254,16 @@ export default function AdminDashboard() {
                                 <LogOut className="w-4 h-4" />
                                 Logout
                             </button>
+                            {/* Enable/Disable Quiz */}
+                            <button
+                                onClick={toggleQuiz}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-white transition-all duration-300 ${enabled
+                                        ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
+                                        : "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+                                    }`}
+                            >
+                                {enabled ? "Disable Quiz" : "Enable Quiz"}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -291,7 +335,7 @@ export default function AdminDashboard() {
                             </p>
                         </div>
                     ) : (
-                        filteredSubmissions.map((submission, index) => {
+                        currentSubmissions.map((submission, index) => {
                             const score = calculateScore(submission.answers);
                             const percentage = score.total > 0 ? Math.round((score.correct / score.total) * 100) : 0;
 
@@ -322,8 +366,8 @@ export default function AdminDashboard() {
                                             {/* Score Badge */}
                                             <div className="text-center">
                                                 <div className={`px-3 py-1 rounded-full text-sm font-bold ${percentage >= 80 ? 'bg-green-100 text-green-800' :
-                                                    percentage >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-red-100 text-red-800'
+                                                        percentage >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-red-100 text-red-800'
                                                     }`}>
                                                     {score.correct}/{score.total} ({percentage}%)
                                                 </div>
@@ -347,6 +391,63 @@ export default function AdminDashboard() {
                         })
                     )}
                 </div>
+
+                {/* Pagination - Add this after your grid */}
+                {filteredSubmissions.length > 0 && totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-6 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-4">
+                        <div className="text-sm text-gray-600">
+                            Showing {startIndex + 1} to {Math.min(endIndex, filteredSubmissions.length)} of {filteredSubmissions.length} submissions
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                className="flex items-center gap-1 px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                                Previous
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                    let page;
+                                    if (totalPages <= 5) {
+                                        page = i + 1;
+                                    } else if (currentPage <= 3) {
+                                        page = i + 1;
+                                    } else if (currentPage >= totalPages - 2) {
+                                        page = totalPages - 4 + i;
+                                    } else {
+                                        page = currentPage - 2 + i;
+                                    }
+
+                                    return (
+                                        <button
+                                            key={page}
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`w-10 h-10 rounded-lg font-medium transition-colors ${currentPage === page
+                                                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                                className="flex items-center gap-1 px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Next
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Stats Footer */}
                 <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">

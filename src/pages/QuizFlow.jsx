@@ -1,23 +1,22 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, addDoc, serverTimestamp, query, where, getDoc, doc } from "firebase/firestore";
 import { db } from "../firebase";
-import { Save, ChevronLeft, ChevronRight, Clock, Star, BookOpen, AlertTriangle } from "lucide-react";
-
+import { Save, ChevronLeft, ChevronRight, Clock, Star, BookOpen, AlertTriangle, MessageCircle, X } from "lucide-react";
 export default function QuizFlow() {
     const [step, setStep] = useState("start"); // start | quiz | complete
     const [userDetails, setUserDetails] = useState({
         name: "",
-        email: "",
         number: "",
         place: ""
     });
     const [questions, setQuestions] = useState([]);
     const [currentQIndex, setCurrentQIndex] = useState(0);
     const [answers, setAnswers] = useState({});
-    const [timeLeft, setTimeLeft] = useState(1500); // 25 minutes
+    const [timeLeft, setTimeLeft] = useState(60); // 25 minutes
     const [unsavedQuestions, setUnsavedQuestions] = useState([]);
     const [selectedButUnsaved, setSelectedButUnsaved] = useState(new Set());
     const [isLoading, setIsLoading] = useState(true);
+    const [quizDisabled, setQuizDisabled] = useState(false);
 
     // Load saved state on mount
     useEffect(() => {
@@ -25,10 +24,10 @@ export default function QuizFlow() {
         if (savedState) {
             const parsed = JSON.parse(savedState);
             setStep(parsed.step || "start");
-            setUserDetails(parsed.userDetails || { name: "", email: "", number: "", place: "" });
+            setUserDetails(parsed.userDetails || { name: "", number: "", place: "" });
             setCurrentQIndex(parsed.currentQIndex || 0);
             setAnswers(parsed.answers || {});
-            setTimeLeft(parsed.timeLeft || 1500);
+            setTimeLeft(parsed.timeLeft || 60);
             setUnsavedQuestions(parsed.unsavedQuestions || []);
             setSelectedButUnsaved(new Set(parsed.selectedButUnsaved || []));
             if (parsed.questions && parsed.questions.length > 0) {
@@ -78,6 +77,24 @@ export default function QuizFlow() {
         }
     };
 
+    useEffect(() => {
+        const checkQuizStatus = async () => {
+            try {
+                const docRef = doc(db, "quizSettings", "quizControl");
+                const snap = await getDoc(docRef);
+                if (snap.exists() && !snap.data().enabled) {
+                    setQuizDisabled(true); // show modal
+                } else {
+                    setQuizDisabled(false); // quiz enabled, don’t show
+                }
+            } catch (err) {
+                console.error("Error fetching quiz status:", err);
+                setQuizDisabled(true); // fail safe → treat as disabled
+            }
+        };
+        checkQuizStatus();
+    }, []);
+
     // Prev button
     const handlePrev = () => {
         if (currentQIndex > 0) {
@@ -122,14 +139,42 @@ export default function QuizFlow() {
         return () => clearInterval(interval);
     }, [timeLeft, step]);
 
-    const handleStart = () => {
-        const { name, email, number, place } = userDetails;
-        if (!name || !email || !number || !place) {
+    const handleStart = async () => {
+        const { name, number, place } = userDetails;
+        if (!name || !number || !place) {
             alert("Please fill all details");
             return;
         }
-        setStep("quiz");
+
+        try {
+            // 1️⃣ Check quiz status
+            const statusRef = doc(db, "quizSettings", "quizControl");
+            const statusSnap = await getDoc(statusRef);
+
+            if (statusSnap.exists() && !statusSnap.data().enabled) {
+                // Quiz is disabled → show modal
+                setQuizDisabled(true); // triggers modal
+                return; // stop starting quiz
+            }
+
+            // 2️⃣ Check if the user has already submitted
+            const submissionsRef = collection(db, "submissions");
+            const q = query(submissionsRef, where("number", "==", number));
+            const snapshot = await getDocs(q);
+
+            if (!snapshot.empty) {
+                alert("You have already submitted the quiz with this number.");
+                return;
+            }
+
+            // ✅ Quiz enabled & not submitted → start quiz
+            setStep("quiz");
+        } catch (err) {
+            console.error("Error checking submissions or quiz status:", err);
+            alert("Something went wrong. Please try again.");
+        }
     };
+
 
     const handleAnswer = (option) => {
         const qId = questions[currentQIndex].id;
@@ -163,7 +208,16 @@ export default function QuizFlow() {
         setStep("complete");
 
         try {
-            // Only include questions that have saved answers
+            // Check again before saving
+            const submissionsRef = collection(db, "submissions");
+            const q = query(submissionsRef, where("number", "==", userDetails.number));
+            const snapshot = await getDocs(q);
+
+            if (!snapshot.empty) {
+                console.warn("Duplicate submission attempt detected!");
+                return;
+            }
+
             const savedAnswers = questions
                 .filter(q => answers[q.id] && !unsavedQuestions.includes(q.id))
                 .map((q) => ({
@@ -174,7 +228,7 @@ export default function QuizFlow() {
                     isCorrect: answers[q.id] === q.correctAnswer
                 }));
 
-            await addDoc(collection(db, "submissions"), {
+            await addDoc(submissionsRef, {
                 ...userDetails,
                 submittedAt: serverTimestamp(),
                 answers: savedAnswers,
@@ -183,12 +237,12 @@ export default function QuizFlow() {
                 timeSpent: 1500 - timeLeft
             });
 
-            // Clear saved state after completion
             localStorage.removeItem('quizState');
         } catch (err) {
             console.error("Error saving answers:", err);
         }
     };
+
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
@@ -240,15 +294,7 @@ export default function QuizFlow() {
                                     }
                                     className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors bg-white/70"
                                 />
-                                <input
-                                    type="email"
-                                    placeholder="Email Address"
-                                    value={userDetails.email}
-                                    onChange={(e) =>
-                                        setUserDetails({ ...userDetails, email: e.target.value })
-                                    }
-                                    className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl focus:border-emerald-500 focus:outline-none transition-colors bg-white/70"
-                                />
+                                
                                 <input
                                     type="text"
                                     placeholder="Phone Number"
@@ -435,6 +481,37 @@ export default function QuizFlow() {
                         )}
                     </div>
                 )}
+                {quizDisabled === true && (
+                    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+                        <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xl max-w-md w-full text-center relative">
+                            <div className="absolute top-4 right-4">
+                                <X className="w-5 h-5 text-gray-400" onClick={() => setQuizDisabled(false)} />
+                            </div>
+
+                            <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                                <Clock className="w-8 h-8 text-red-600" />
+                            </div>
+
+                            <h2 className="text-2xl font-bold text-red-700 mb-2">Quiz Unavailable</h2>
+                            <p className="text-gray-600 mb-6">Quiz hasn't started or has been closed by admin.</p>
+
+                            <div className="flex items-center justify-center space-x-2">
+                                <MessageCircle className="w-5 h-5 text-emerald-600" />
+                                <span className="text-gray-600">Need help?</span>
+                                <a
+                                    href="https://wa.me/918129790248"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-emerald-600 font-semibold hover:text-emerald-700 transition-colors"
+                                >
+                                    Message Here
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+
 
                 {!isLoading && step === "complete" && (
                     <div className="max-w-xl mx-auto text-center">
