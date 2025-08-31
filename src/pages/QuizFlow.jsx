@@ -12,7 +12,7 @@ export default function QuizFlow() {
     const [questions, setQuestions] = useState([]);
     const [currentQIndex, setCurrentQIndex] = useState(0);
     const [answers, setAnswers] = useState({});
-    const [timeLeft, setTimeLeft] = useState(60); // 25 minutes
+    const [timeLeft, setTimeLeft] = useState(1500); // 25 minutes
     const [unsavedQuestions, setUnsavedQuestions] = useState([]);
     const [selectedButUnsaved, setSelectedButUnsaved] = useState(new Set());
     const [isLoading, setIsLoading] = useState(true);
@@ -30,12 +30,16 @@ export default function QuizFlow() {
             setTimeLeft(parsed.timeLeft || 60);
             setUnsavedQuestions(parsed.unsavedQuestions || []);
             setSelectedButUnsaved(new Set(parsed.selectedButUnsaved || []));
-            if (parsed.questions && parsed.questions.length > 0) {
-                setQuestions(parsed.questions);
-            }
+
+            // ❌ remove restoring `questions` from localStorage
+            // ✅ questions will always come fresh from Firebase
+            // if (parsed.questions && parsed.questions.length > 0) {
+            //     setQuestions(parsed.questions);
+            // }
         }
         setIsLoading(false);
     }, []);
+
 
     // Save state whenever it changes
     useEffect(() => {
