@@ -70,19 +70,27 @@ export default function QuizFlow() {
     useEffect(() => {
         if (!isLoading) {
             const savedState = JSON.parse(localStorage.getItem("quizState")) || {};
+
+            const askedQuestions = [
+                ...(savedState.askedQuestions || []),
+                ...(questions[currentQIndex] ? [questions[currentQIndex].id] : []),
+            ];
+
             const stateToSave = {
-                ...savedState, // keep quizEndTime unchanged
+                ...savedState,
                 step,
                 userDetails,
                 currentQIndex,
                 answers,
                 unsavedQuestions,
                 selectedButUnsaved: Array.from(selectedButUnsaved),
+                askedQuestions: Array.from(new Set(askedQuestions)), // unique
                 lastSavedAt: Date.now(),
             };
+
             localStorage.setItem("quizState", JSON.stringify(stateToSave));
         }
-    }, [step, userDetails, currentQIndex, answers, unsavedQuestions, selectedButUnsaved, isLoading]);
+    }, [step, userDetails, currentQIndex, answers, unsavedQuestions, selectedButUnsaved, isLoading, questions]);
 
 
     // Save button with auto-next
@@ -143,15 +151,23 @@ export default function QuizFlow() {
                     ...doc.data(),
                 }));
 
+                // Get asked questions from localStorage
+                const savedState = JSON.parse(localStorage.getItem("quizState")) || {};
+                const askedQuestions = savedState.askedQuestions || [];
+
+                // Filter out already asked questions
+                const newQuestions = data.filter(
+                    (q) => !askedQuestions.includes(q.id)
+                );
+
                 // Shuffle questions randomly
-                const shuffledQuestions = data.sort(() => Math.random() - 0.5);
+                const shuffledQuestions = newQuestions.sort(() => Math.random() - 0.5);
                 setQuestions(shuffledQuestions);
             } catch (err) {
                 console.error("Error fetching questions:", err);
             }
         };
 
-        // Only fetch if we don't have questions and we're not loading saved state
         if (!isLoading && questions.length === 0) {
             fetchQuestions();
         }
