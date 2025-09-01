@@ -23,40 +23,56 @@ export default function QuizFlow() {
         const savedState = localStorage.getItem('quizState');
         if (savedState) {
             const parsed = JSON.parse(savedState);
+
+            // ⏳ Check if saved data is older than 24 hours
+            if (parsed.lastSavedAt && (Date.now() - parsed.lastSavedAt) > 24 * 60 * 60 * 1000) {
+                localStorage.removeItem('quizState'); // ❌ Clear old data
+                setTimeLeft(1800); // start fresh (30 minutes)
+                setIsLoading(false);
+                return;
+            }
+
             setStep(parsed.step || "start");
             setUserDetails(parsed.userDetails || { name: "", number: "", place: "" });
             setCurrentQIndex(parsed.currentQIndex || 0);
             setAnswers(parsed.answers || {});
-            setTimeLeft(parsed.timeLeft || 60);
             setUnsavedQuestions(parsed.unsavedQuestions || []);
             setSelectedButUnsaved(new Set(parsed.selectedButUnsaved || []));
 
-            // ❌ remove restoring `questions` from localStorage
-            // ✅ questions will always come fresh from Firebase
-            // if (parsed.questions && parsed.questions.length > 0) {
-            //     setQuestions(parsed.questions);
-            // }
+            // Calculate remaining time
+            if (parsed.lastSavedAt && parsed.timeLeft !== undefined) {
+                const elapsed = Math.floor((Date.now() - parsed.lastSavedAt) / 1000);
+                const remaining = parsed.timeLeft - elapsed;
+                setTimeLeft(remaining > 0 ? remaining : 0);
+            } else {
+                setTimeLeft(1800); // default 30 minutes
+            }
+        } else {
+            setTimeLeft(1800); // default 30 minutes
         }
         setIsLoading(false);
     }, []);
 
 
+
+
+
     // Save state whenever it changes
     useEffect(() => {
         if (!isLoading) {
+            const quizEndTime = Date.now() + timeLeft * 1000; // absolute end time in ms
             const stateToSave = {
                 step,
                 userDetails,
                 currentQIndex,
                 answers,
-                timeLeft,
                 unsavedQuestions,
                 selectedButUnsaved: Array.from(selectedButUnsaved),
-                questions
+                quizEndTime,
             };
             localStorage.setItem('quizState', JSON.stringify(stateToSave));
         }
-    }, [step, userDetails, currentQIndex, answers, timeLeft, unsavedQuestions, selectedButUnsaved, questions, isLoading]);
+    }, [step, userDetails, currentQIndex, answers, timeLeft, unsavedQuestions, selectedButUnsaved, isLoading]);
 
     // Save button with auto-next
     const handleSave = () => {
