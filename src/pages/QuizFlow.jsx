@@ -19,15 +19,16 @@ export default function QuizFlow() {
     const [quizDisabled, setQuizDisabled] = useState(false);
 
     // Load saved state on mount
+    // Load saved state
     useEffect(() => {
-        const savedState = localStorage.getItem('quizState');
+        const savedState = localStorage.getItem("quizState");
         if (savedState) {
             const parsed = JSON.parse(savedState);
 
-            // ⏳ Check if saved data is older than 24 hours
+            // Expiry check (24 hrs)
             if (parsed.lastSavedAt && (Date.now() - parsed.lastSavedAt) > 24 * 60 * 60 * 1000) {
-                localStorage.removeItem('quizState'); // ❌ Clear old data
-                setTimeLeft(1800); // start fresh (30 minutes)
+                localStorage.removeItem("quizState");
+                setTimeLeft(1800);
                 setIsLoading(false);
                 return;
             }
@@ -39,16 +40,23 @@ export default function QuizFlow() {
             setUnsavedQuestions(parsed.unsavedQuestions || []);
             setSelectedButUnsaved(new Set(parsed.selectedButUnsaved || []));
 
-            // Calculate remaining time
-            if (parsed.lastSavedAt && parsed.timeLeft !== undefined) {
-                const elapsed = Math.floor((Date.now() - parsed.lastSavedAt) / 1000);
-                const remaining = parsed.timeLeft - elapsed;
+            // ✅ Use absolute quizEndTime instead of recalculating
+            if (parsed.quizEndTime) {
+                const remaining = Math.floor((parsed.quizEndTime - Date.now()) / 1000);
                 setTimeLeft(remaining > 0 ? remaining : 0);
             } else {
-                setTimeLeft(1800); // default 30 minutes
+                const quizEndTime = Date.now() + 1800 * 1000; // 30 mins
+                setTimeLeft(1800);
+                localStorage.setItem("quizState", JSON.stringify({ ...parsed, quizEndTime }));
             }
         } else {
-            setTimeLeft(1800); // default 30 minutes
+            // First time start
+            const quizEndTime = Date.now() + 1800 * 1000;
+            setTimeLeft(1800);
+            localStorage.setItem(
+                "quizState",
+                JSON.stringify({ step: "start", userDetails: {}, quizEndTime })
+            );
         }
         setIsLoading(false);
     }, []);
@@ -57,22 +65,25 @@ export default function QuizFlow() {
 
 
 
+
     // Save state whenever it changes
     useEffect(() => {
         if (!isLoading) {
-            const quizEndTime = Date.now() + timeLeft * 1000; // absolute end time in ms
+            const savedState = JSON.parse(localStorage.getItem("quizState")) || {};
             const stateToSave = {
+                ...savedState, // keep quizEndTime unchanged
                 step,
                 userDetails,
                 currentQIndex,
                 answers,
                 unsavedQuestions,
                 selectedButUnsaved: Array.from(selectedButUnsaved),
-                quizEndTime,
+                lastSavedAt: Date.now(),
             };
-            localStorage.setItem('quizState', JSON.stringify(stateToSave));
+            localStorage.setItem("quizState", JSON.stringify(stateToSave));
         }
-    }, [step, userDetails, currentQIndex, answers, timeLeft, unsavedQuestions, selectedButUnsaved, isLoading]);
+    }, [step, userDetails, currentQIndex, answers, unsavedQuestions, selectedButUnsaved, isLoading]);
+
 
     // Save button with auto-next
     const handleSave = () => {

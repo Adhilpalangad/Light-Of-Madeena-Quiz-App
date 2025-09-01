@@ -29,10 +29,9 @@ export default function Leaderboard() {
                 });
 
                 // Sort by correctCount descending, then by timeSpent ascending
-                data.sort((a, b) => {
-                    if (b.correctCount !== a.correctCount) return b.correctCount - a.correctCount;
-                    return a.timeSpent - b.timeSpent;
-                });
+                // Sort by correctCount descending only
+                data.sort((a, b) => b.correctCount - a.correctCount);
+
 
                 setLeaderboard(data);
             } catch (err) {
@@ -204,11 +203,7 @@ export default function Leaderboard() {
                                         <h4 className="font-bold text-xl text-gray-800 mb-2">{leaderboard[1].name}</h4>
                                         <div className="bg-gradient-to-r from-slate-100 to-slate-200 rounded-xl p-3 mb-3">
                                             <p className="text-slate-700 font-bold text-lg">{leaderboard[1].correctCount} Correct</p>
-                                        </div>
-                                        <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg p-2">
-                                            <Clock className="w-4 h-4" />
-                                            <span>{Math.floor(leaderboard[1].timeSpent / 60)}m {leaderboard[1].timeSpent % 60}s</span>
-                                        </div>
+                                        </div>                                
                                     </div>
                                 </div>
                                 
@@ -258,10 +253,7 @@ export default function Leaderboard() {
                                         <div className="bg-gradient-to-r from-yellow-100 to-yellow-200 rounded-xl p-4 mb-4">
                                             <p className="text-yellow-800 font-bold text-xl">{leaderboard[0].correctCount} Correct</p>
                                         </div>
-                                        <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
-                                            <Clock className="w-5 h-5" />
-                                            <span className="font-medium">{Math.floor(leaderboard[0].timeSpent / 60)}m {leaderboard[0].timeSpent % 60}s</span>
-                                        </div>
+                                        
                                     </div>
                                 </div>
                                 
@@ -307,10 +299,7 @@ export default function Leaderboard() {
                                         <div className="bg-gradient-to-r from-orange-100 to-orange-200 rounded-xl p-3 mb-3">
                                             <p className="text-orange-700 font-bold text-lg">{leaderboard[2].correctCount} Correct</p>
                                         </div>
-                                        <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg p-2">
-                                            <Clock className="w-4 h-4" />
-                                            <span>{Math.floor(leaderboard[2].timeSpent / 60)}m {leaderboard[2].timeSpent % 60}s</span>
-                                        </div>
+                                        
                                     </div>
                                 </div>
                                 

@@ -1,0 +1,15 @@
+export default function App() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 px-4">
+      <div className="bg-white shadow-xl rounded-2xl p-8 max-w-md w-full text-center">
+        <h1 className="text-3xl font-bold text-red-600 mb-4">
+          🚧 Quiz Temporarily Stopped
+        </h1>
+        <p className="text-gray-700 text-lg">
+          The quiz is currently unavailable.<br />
+          Please check back later.
+        </p>
+      </div>
+    </div>
+  );
+}
