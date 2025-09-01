@@ -105,16 +105,31 @@ export default function AdminDashboard() {
             );
         }
 
-        // Sort
-        filtered.sort((a, b) => {
-            if (!a.submittedAt || !b.submittedAt) return 0;
-            return sortOrder === "newest"
-                ? new Date(b.submittedAt) - new Date(a.submittedAt)
-                : new Date(a.submittedAt) - new Date(b.submittedAt);
-        });
+        // Sorting logic
+        if (sortOrder === "newest" || sortOrder === "oldest") {
+            filtered.sort((a, b) => {
+                if (!a.submittedAt || !b.submittedAt) return 0;
+                return sortOrder === "newest"
+                    ? new Date(b.submittedAt) - new Date(a.submittedAt)
+                    : new Date(a.submittedAt) - new Date(b.submittedAt);
+            });
+        }
 
+        // ✅ Sort by most correct answers
+        if (sortOrder === "mostCorrect") {
+            filtered.sort((a, b) => {
+                // Count correct answers for submission 'a'
+                const aCorrect = a.answers?.filter(ans => ans.isCorrect).length || 0;
+                // Count correct answers for submission 'b'
+                const bCorrect = b.answers?.filter(ans => ans.isCorrect).length || 0;
+                // Sort in descending order (highest score first)
+                return bCorrect - aCorrect;
+            });
+        }
         setFilteredSubmissions(filtered);
     }, [submissions, dateFilter, sortOrder, searchTerm]);
+
+
 
     const handleLogout = async () => {
         try {
@@ -271,6 +286,7 @@ export default function AdminDashboard() {
                 {/* Filters */}
                 <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-6 mb-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Search Input */}
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                             <input
@@ -282,6 +298,7 @@ export default function AdminDashboard() {
                             />
                         </div>
 
+                        {/* Date Filter */}
                         <div className="relative">
                             <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                             <input
@@ -292,6 +309,7 @@ export default function AdminDashboard() {
                             />
                         </div>
 
+                        {/* Sorting Dropdown */}
                         <select
                             value={sortOrder}
                             onChange={(e) => setSortOrder(e.target.value)}
@@ -299,6 +317,7 @@ export default function AdminDashboard() {
                         >
                             <option value="newest">Newest First</option>
                             <option value="oldest">Oldest First</option>
+                            <option value="mostCorrect">Most Correct Answers</option> {/* ✅ This is the required option */}
                         </select>
                     </div>
 
